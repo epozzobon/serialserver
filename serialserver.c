@@ -4,12 +4,15 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <fcntl.h>
 #include <termios.h>
+
+#define PT_NAME_MAX_LEN 255
 
 
 struct server_data {
@@ -24,6 +27,7 @@ struct client_data {
 	pthread_t thread;
 	pthread_t thread_t2s;
 	pthread_t thread_s2t;
+    char pt_name[PT_NAME_MAX_LEN+1];
 };
 
 
@@ -49,13 +53,13 @@ void *tcp_to_serial(void *arg) {
 			continue;
 		}
 		if (ret < len) {
-			printf("Socket %d could not be written to pt\n", ctx->socket);
+			printf("Socket %d could not be written to pt %s\n", ctx->socket, ctx->pt_name);
 			break;
 		}
-		printf("Wrote %d bytes from socket %d to pt\n", ret, ctx->socket);
+		printf("Wrote %d bytes from socket %d to pt %s\n", ret, ctx->socket, ctx->pt_name);
 	}
 
-	printf("Socket %d finished\n", ctx->socket);
+	printf("Socket %d for pt %s finished\n", ctx->socket, ctx->pt_name);
 }
 
 
@@ -71,7 +75,7 @@ void *serial_to_tcp(void *arg) {
 			continue;
 		}
 		if (ret == 0) {
-			printf("pt for socket %d died\n", ctx->socket);
+			printf("pt %s died\n", ctx->pt_name);
 			break;
 		}
 		len = ret;
@@ -81,13 +85,13 @@ void *serial_to_tcp(void *arg) {
 			break;
 		}
 		if (ret < len) {
-			printf("pt could not be written to socket %d\n", ctx->socket);
+			printf("pt %s could not be written to socket %d\n", ctx->pt_name, ctx->socket);
 			break;
 		}
-		printf("Wrote %d bytes from pt to socket %d\n", ret, ctx->socket);
+		printf("Wrote %d bytes from pt %s to socket %d\n", ret, ctx->pt_name, ctx->socket);
 	}
 	
-	printf("pt for socket %d finished\n", ctx->socket);
+	printf("pt %s for socket %d finished\n", ctx->pt_name, ctx->socket);
 }
 
 void *emulate_serial(void *arg) {
@@ -119,7 +123,7 @@ void *emulate_serial(void *arg) {
 		perror("ptsname");
 		exit(1);
 	}
-	
+
 	ret = tcgetattr(ctx->pt, &termios_s);
 	if (ret != 0) {
 		perror("tcgetattr");
@@ -134,7 +138,11 @@ void *emulate_serial(void *arg) {
 		exit(1);
 	}
 
-	printf("Mirroring socket %d at pt %s\n", ctx->socket, ptr);
+    strncpy(ctx->pt_name, ptr, PT_NAME_MAX_LEN);
+    // Termination in case the name was too long
+    ctx->pt_name[PT_NAME_MAX_LEN] = 0;
+
+	printf("Mirroring socket %d at pt %s\n", ctx->socket, ctx->pt_name);
 	
 	ret = pthread_create(&ctx->thread_s2t, NULL, serial_to_tcp, ctx);
 	if (ret) {
